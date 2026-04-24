@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+motor
+pydantic
+pydantic-settings
+langchain
+langgraph
+crewai
+google-generativeai
+langchain-google-genai
+python-dotenv
+cors
