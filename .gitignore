@@ -25,6 +25,7 @@ dist-ssr
 
 
 backend/seethru/
+seethru/
 Lib/
 Scripts/
 Include/
