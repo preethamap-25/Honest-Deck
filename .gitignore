@@ -23,11 +23,4 @@ dist-ssr
 *.sln
 *.sw?
 
-
-backend/seethru/
 seethru/
-Lib/
-Scripts/
-Include/
-pyvenv.cfg
-__pycache__/
