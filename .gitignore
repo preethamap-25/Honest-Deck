@@ -24,5 +24,9 @@ dist-ssr
 *.sw?
 
 
-seethru/
-backend/venv/
+backend/seethru/
+Lib/
+Scripts/
+Include/
+pyvenv.cfg
+__pycache__/
