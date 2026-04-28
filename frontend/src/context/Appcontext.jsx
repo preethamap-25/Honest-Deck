@@ -1,43 +1,32 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { mockChecks, mockUser } from "../data/mockData";
 
 const AppContext = createContext(null);
 
+const defaultPrefs = {
+  notifMessages: true,
+  notifUpdates: true,
+  notifWeekly: false,
+  soundEnabled: false,
+  compactMode: false,
+  codeLineNumbers: true,
+  streamResponses: true,
+  saveHistory: true,
+  language: "en",
+  fontSize: "medium",
+  sensitivity: "balanced",
+  autoScanUrls: true,
+  trustedSources: ["Reuters", "AP", "BBC", "WHO", "CDC"],
+};
+
 export function AppProvider({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [user, setUser] = useState(null);
-  const [checks, setChecks] = useState([]);
-  const [activeCheckId, setActiveCheckId] = useState(null);
+  const [user, setUser] = useState(mockUser);
+  const [checks, setChecks] = useState(mockChecks);
+  const [activeCheckId, setActiveCheckId] = useState(mockChecks[0]?.id ?? null);
   const [theme, setTheme] = useState("light");
-  const [prefs, setPrefs] = useState({});
+  const [prefs, setPrefs] = useState(defaultPrefs);
   const [notifications, setNotifications] = useState([]);
-
-  // Fetch initial data
-  useEffect(() => {
-    async function loadInitialData() {
-      try {
-        // Fetch User & Prefs
-        const userRes = await fetch("/api/user");
-        if (userRes.ok) {
-          const userData = await userRes.json();
-          setUser(userData.profile);
-          setPrefs(userData.prefs);
-        }
-
-        // Fetch Checks
-        const checksRes = await fetch("/api/checks");
-        if (checksRes.ok) {
-          const checksData = await checksRes.json();
-          setChecks(checksData);
-          if (checksData.length > 0) {
-            setActiveCheckId(checksData[0].id);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to load initial data:", error);
-      }
-    }
-    loadInitialData();
-  }, []);
 
   // Apply theme
   useEffect(() => {
@@ -50,7 +39,6 @@ export function AppProvider({ children }) {
 
   // Apply font size
   useEffect(() => {
-    if (!prefs.fontSize) return;
     const root = document.documentElement;
     root.classList.remove("text-sm", "text-base", "text-lg");
     const map = { small: "text-sm", medium: "text-base", large: "text-lg" };
@@ -59,81 +47,45 @@ export function AppProvider({ children }) {
 
   const activeCheck = checks.find((c) => c.id === activeCheckId) ?? null;
 
-  const createCheck = useCallback(async (title = "New Fact-Check") => {
-    try {
-      const res = await fetch("/api/checks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title })
-      });
-      if (res.ok) {
-        const newCheck = await res.json();
-        setChecks((prev) => [newCheck, ...prev]);
-        setActiveCheckId(newCheck.id);
-        return newCheck.id;
-      }
-    } catch (error) {
-      console.error("Failed to create check", error);
-    }
-    return null;
+  const createCheck = useCallback((title = "New Fact-Check") => {
+    const id = `check-${Date.now()}`;
+    const newCheck = {
+      id, title,
+      verdict: null,
+      score: null,
+      messages: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      pinned: false,
+      tags: [],
+    };
+    setChecks((prev) => [newCheck, ...prev]);
+    setActiveCheckId(id);
+    return id;
   }, []);
 
-  const deleteCheck = useCallback(async (id) => {
-    try {
-      const res = await fetch(`/api/checks/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setChecks((prev) => {
-          const next = prev.filter((c) => c.id !== id);
-          if (activeCheckId === id) setActiveCheckId(next[0]?.id ?? null);
-          return next;
-        });
-      }
-    } catch (error) {
-      console.error("Failed to delete check", error);
-    }
+  const deleteCheck = useCallback((id) => {
+    setChecks((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      if (activeCheckId === id) setActiveCheckId(next[0]?.id ?? null);
+      return next;
+    });
   }, [activeCheckId]);
 
-  const renameCheck = useCallback(async (id, title) => {
-    try {
-      const res = await fetch(`/api/checks/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title })
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setChecks((prev) => prev.map((c) => (c.id === id ? updated : c)));
-      }
-    } catch (error) {
-      console.error("Failed to rename check", error);
-    }
+  const renameCheck = useCallback((id, title) => {
+    setChecks((prev) => prev.map((c) => (c.id === id ? { ...c, title } : c)));
   }, []);
 
-  const togglePin = useCallback(async (id) => {
-    const check = checks.find(c => c.id === id);
-    if (!check) return;
-    try {
-      const res = await fetch(`/api/checks/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pinned: !check.pinned })
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setChecks((prev) => prev.map((c) => (c.id === id ? updated : c)));
-      }
-    } catch (error) {
-      console.error("Failed to toggle pin", error);
-    }
-  }, [checks]);
+  const togglePin = useCallback((id) => {
+    setChecks((prev) => prev.map((c) => (c.id === id ? { ...c, pinned: !c.pinned } : c)));
+  }, []);
 
-  // addMessage now just updates the local state optimism, but it shouldn't be the main way to submit. 
-  // It's used by the polling/websocket in the future or direct push.
   const addMessage = useCallback((checkId, message) => {
     setChecks((prev) =>
       prev.map((c) => {
         if (c.id !== checkId) return c;
 
+        // Extract verdict/score from assistant message if present
         let verdict = c.verdict;
         let score = c.score;
         let title = c.title;
@@ -165,30 +117,8 @@ export function AppProvider({ children }) {
     );
   }, []);
 
-  // Update user on backend
-  const updateUser = useCallback(async (patch) => {
-    setUser((p) => ({ ...p, ...patch }));
-    try {
-      await fetch("/api/user/profile", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch)
-      });
-    } catch (e) { console.error("Failed to update user", e) }
-  }, []);
-
-  // Update prefs on backend
-  const updatePref = useCallback(async (key, value) => {
-    setPrefs((p) => ({ ...p, [key]: value }));
-    try {
-      await fetch("/api/user/prefs", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [key]: value })
-      });
-    } catch (e) { console.error("Failed to update prefs", e) }
-  }, []);
-
+  const updateUser = useCallback((patch) => setUser((p) => ({ ...p, ...patch })), []);
+  const updatePref = useCallback((key, value) => setPrefs((p) => ({ ...p, [key]: value })), []);
   const markNotificationRead = useCallback((id) => {
     setNotifications((p) => p.map((n) => (n.id === id ? { ...n, read: true } : n)));
   }, []);
@@ -206,7 +136,6 @@ export function AppProvider({ children }) {
       theme, setTheme,
       prefs, updatePref,
       notifications, unreadCount, markNotificationRead, markAllRead,
-      setChecks, // Adding setChecks so hooks can refresh data
     }}>
       {children}
     </AppContext.Provider>

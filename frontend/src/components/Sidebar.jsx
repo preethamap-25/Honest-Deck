@@ -51,14 +51,13 @@ export default function Sidebar() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-md">
+          {/* <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-md">
             <Shield size={16} className="text-white" />
-          </div>
+          </div> */}
           <div>
             <span className="font-display font-bold text-base text-slate-800 dark:text-white tracking-tight">
               SeeThru
             </span>
-            <p className="text-[10px] text-slate-400 leading-none -mt-0.5">AI Fact Checker</p>
           </div>
         </div>
         <button
