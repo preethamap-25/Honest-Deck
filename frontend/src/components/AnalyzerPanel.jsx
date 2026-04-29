@@ -275,6 +275,22 @@ export default function AnalyzerPanel() {
               🔔 High-risk alert triggered — email notification sent.
             </div>
           )}
+
+          {/* Evidence */}
+          {result.evidence && result.evidence.length > 0 && (
+            <details className="mt-2">
+              <summary className="text-xs text-[var(--text-secondary)] cursor-pointer hover:text-[var(--text-primary)]">
+                View supporting evidence ({result.evidence.length})
+              </summary>
+              <ul className="mt-2 space-y-2">
+                {result.evidence.map((e, i) => (
+                  <li key={i} className="bg-white/5 rounded-lg p-2 text-xs text-[var(--text-secondary)] border border-[var(--border)]">
+                    <span className="font-medium text-indigo-400">{e.source}</span>: {e.snippet}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </motion.div>
       )}
     </div>

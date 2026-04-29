@@ -1,16 +1,9 @@
 """
-News article classifier — classifies fetched articles as REAL or FAKE using Groq.
+News article classifier — classifies fetched articles as REAL or FAKE using Ollama.
 """
-import os
-import json
 import asyncio
-from dotenv import load_dotenv
-from groq import Groq
 
-load_dotenv()
-
-_client = Groq(api_key=os.getenv("GROQ_API_KEY", ""))
-_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+from utils.ollama_client import ollama_chat, parse_json_response
 
 _CLASSIFY_PROMPT = """You are an expert news verification agent. Given a news article title and description, classify it.
 Return ONLY a valid JSON object:
@@ -24,23 +17,22 @@ No markdown. Only JSON."""
 
 async def _classify_one(title: str, description: str) -> dict:
     text = f"Title: {title}\nDescription: {description or 'N/A'}"
-    try:
-        response = await asyncio.to_thread(
-            _client.chat.completions.create,
-            model=_MODEL,
-            messages=[
-                {"role": "system", "content": _CLASSIFY_PROMPT},
-                {"role": "user", "content": text},
-            ],
-            temperature=0.1,
-            max_tokens=200,
-        )
-        raw = response.choices[0].message.content.strip()
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-        return json.loads(raw)
-    except Exception:
+    raw = await ollama_chat(
+        messages=[
+            {"role": "system", "content": _CLASSIFY_PROMPT},
+            {"role": "user", "content": text},
+        ],
+        temperature=0.1,
+        timeout=30,
+    )
+    if raw is None:
         return {"verdict": "UNVERIFIED", "confidence": 0.0, "reason": "Classification unavailable"}
+
+    parsed = parse_json_response(raw)
+    if parsed is None:
+        return {"verdict": "UNVERIFIED", "confidence": 0.0, "reason": "Classification unavailable"}
+
+    return parsed
 
 
 async def classify_articles(articles: list) -> list:

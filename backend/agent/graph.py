@@ -1,4 +1,13 @@
-"""LangGraph state graph for SEETHRU agent pipeline."""
+"""
+LangGraph state graph for SEETHRU agent pipeline.
+
+Architecture layers implemented:
+  1. Input Layer      — preprocessor_node  (normalize, validate, extract metadata)
+  2. Central Agent    — input_router       (dynamic routing via conditional edges)
+  3. Verification     — text_classifier, url_detector, image_detector, evidence_retrieval
+  4. Reasoning        — aggregator         (conflict resolution + risk scoring)
+  5. Explanation      — explainer          (human-readable summary with evidence)
+"""
 
 from __future__ import annotations
 
@@ -15,26 +24,39 @@ from db.mongo import db, save_analysis
 from tools.image_detector import detect_image
 from tools.text_classifier import classify_text
 from tools.url_detector import detect_url
+from tools.evidence_retrieval import retrieve_evidence
+from tools.preprocessor import preprocess
 from utils.email_alert import send_alert_email
 from utils.explainer import generate_explanation
 
 
+# ── State schema ────────────────────────────────────────────────────────────
+
 class GraphState(TypedDict, total=False):
+    # raw inputs
     input_type: str
     content: str
     mime_type: str
 
+    # after preprocessing
     routed_type: str
+    metadata: dict
+
+    # tool results
     text_result: dict | None
     url_result: dict | None
     image_result: dict | None
+    evidence: list[dict]
 
+    # aggregated output
     risk_score: float
     label: str
     verdict: str
     explanation: str
     agent_steps: list[dict[str, Any]]
 
+
+# ── Helpers ─────────────────────────────────────────────────────────────────
 
 def _step(agent: str, action: str, detail: str = "") -> dict[str, Any]:
     return {
@@ -54,23 +76,33 @@ def _label_from_score(score: float) -> str:
     return "SAFE"
 
 
-def _detect_type(value: str) -> str:
-    if re.match(r"^https?://[^\s]+$", value.strip()):
-        return "url"
-    return "text"
+# ── Layer 1: Input Preprocessing ────────────────────────────────────────────
 
+async def preprocessor_node(state: GraphState) -> GraphState:
+    """Normalize input, detect type, extract metadata."""
+    raw_content = state.get("content", "")
+    explicit_type = (state.get("input_type") or "").strip().lower() or None
 
-async def input_router(state: GraphState) -> GraphState:
-    explicit = (state.get("input_type") or "").strip().lower()
-    if explicit in {"text", "url", "image"}:
-        routed = explicit
-    else:
-        routed = _detect_type(state.get("content", ""))
+    pp = preprocess(raw_content, explicit_type)
 
+    routed = pp["input_type"]
     steps = list(state.get("agent_steps", []))
-    steps.append(_step("input_router", f"Detected input type: {routed}"))
-    return {"routed_type": routed, "agent_steps": steps}
+    steps.append(
+        _step(
+            "preprocessor",
+            f"Preprocessed input — type: {routed}",
+            f"chars={pp['metadata'].get('char_count', 0)}",
+        )
+    )
+    return {
+        "content": pp["content"],
+        "routed_type": routed,
+        "metadata": pp["metadata"],
+        "agent_steps": steps,
+    }
 
+
+# ── Layer 3: Verification Tool Nodes ───────────────────────────────────────
 
 async def text_classifier_node(state: GraphState) -> GraphState:
     result = await classify_text(state.get("content", ""))
@@ -98,14 +130,63 @@ async def url_detector_node(state: GraphState) -> GraphState:
     return {"url_result": result, "agent_steps": steps}
 
 
+async def image_detector_node(state: GraphState) -> GraphState:
+    """Dedicated image detection node (was previously inside aggregator)."""
+    result = await detect_image(
+        state.get("content", ""),
+        state.get("mime_type", "image/jpeg"),
+    )
+    steps = list(state.get("agent_steps", []))
+    steps.append(
+        _step(
+            "image_detector",
+            "Analyzed image authenticity",
+            f"label={result.get('label')} risk={result.get('risk_score')}",
+        )
+    )
+    return {"image_result": result, "agent_steps": steps}
+
+
+async def evidence_node(state: GraphState) -> GraphState:
+    """Cross-reference claims with trusted sources via DuckDuckGo."""
+    routed = state.get("routed_type", "text")
+    content = state.get("content", "")
+
+    # Build a search query from the content
+    if routed == "text":
+        query = content[:200]
+    elif routed == "url":
+        query = content
+    else:
+        # For images, use any text_result explanation as query
+        tr = state.get("text_result") or {}
+        query = tr.get("explanation", "")[:200]
+
+    evidence = []
+    if query.strip():
+        try:
+            evidence = await asyncio.wait_for(
+                retrieve_evidence(query, k=5),
+                timeout=12,
+            )
+        except Exception:
+            evidence = [{"snippet": "Evidence retrieval timed out", "source": "error"}]
+
+    steps = list(state.get("agent_steps", []))
+    steps.append(
+        _step("evidence_retrieval", "Fetched supporting evidence", f"found={len(evidence)} items")
+    )
+    return {"evidence": evidence, "agent_steps": steps}
+
+
+# ── Layer 4: Reasoning — Aggregator with Conflict Resolution ───────────────
+
 async def aggregator_node(state: GraphState) -> GraphState:
     routed = state.get("routed_type", "text")
     text_result = state.get("text_result")
     url_result = state.get("url_result")
     image_result = state.get("image_result")
-
-    if routed == "image" and image_result is None:
-        image_result = await detect_image(state.get("content", ""), state.get("mime_type", "image/jpeg"))
+    evidence = state.get("evidence", [])
 
     risk_score = 0.0
     verdict = "Safe"
@@ -118,9 +199,20 @@ async def aggregator_node(state: GraphState) -> GraphState:
         else:
             risk_score = max(0.0, 1.0 - confidence) * 0.4
             verdict = "Safe"
+
+        # Conflict resolution: if evidence from trusted sources contradicts
+        trusted_count = sum(1 for e in evidence if "trusted" in e.get("source", ""))
+        if trusted_count > 0 and text_result.get("is_fake"):
+            # Trusted sources found — slightly lower confidence in fake verdict
+            risk_score = max(0.0, risk_score - 0.1)
+        elif trusted_count == 0 and text_result.get("is_fake"):
+            # No trusted sources to corroborate — boost risk slightly
+            risk_score = min(1.0, risk_score + 0.05)
+
     elif routed == "url" and url_result:
         risk_score = float(url_result.get("risk_score", 0.0))
         verdict = "Phishing" if bool(url_result.get("is_phishing", False)) else "Safe"
+
     elif routed == "image" and image_result:
         risk_score = float(image_result.get("risk_score", 0.0))
         verdict = "Fake" if risk_score >= 0.6 else "Safe"
@@ -129,16 +221,17 @@ async def aggregator_node(state: GraphState) -> GraphState:
     label = _label_from_score(risk_score)
 
     steps = list(state.get("agent_steps", []))
-    steps.append(_step("aggregator", "Combined node outputs", f"risk={risk_score} label={label}"))
+    steps.append(_step("aggregator", "Combined & resolved tool outputs", f"risk={risk_score} label={label}"))
 
     return {
-        "image_result": image_result,
         "risk_score": risk_score,
         "label": label,
         "verdict": verdict,
         "agent_steps": steps,
     }
 
+
+# ── Layer 4b: Explainer ────────────────────────────────────────────────────
 
 async def explainer_node(state: GraphState) -> GraphState:
     try:
@@ -151,7 +244,7 @@ async def explainer_node(state: GraphState) -> GraphState:
                     "text_result": state.get("text_result"),
                     "url_result": state.get("url_result"),
                     "image_result": state.get("image_result"),
-                    "evidence": [],
+                    "evidence": state.get("evidence", []),
                 }
             ),
             timeout=20,
@@ -166,38 +259,58 @@ async def explainer_node(state: GraphState) -> GraphState:
     return {"explanation": explanation, "agent_steps": steps}
 
 
-def _route_after_input(state: GraphState) -> Literal["text_classifier", "url_detector", "aggregator"]:
+# ── Routing Logic ──────────────────────────────────────────────────────────
+
+def _route_after_preprocessor(
+    state: GraphState,
+) -> Literal["text_classifier", "url_detector", "image_detector"]:
     routed = state.get("routed_type", "text")
-    if routed == "text":
-        return "text_classifier"
     if routed == "url":
         return "url_detector"
-    return "aggregator"
+    if routed == "image":
+        return "image_detector"
+    return "text_classifier"
 
+
+# ── Graph Construction ─────────────────────────────────────────────────────
 
 def _build_graph():
     graph = StateGraph(GraphState)
 
-    graph.add_node("input_router", input_router)
+    # Layer 1 — Input
+    graph.add_node("preprocessor", preprocessor_node)
+
+    # Layer 3 — Verification tools
     graph.add_node("text_classifier", text_classifier_node)
     graph.add_node("url_detector", url_detector_node)
+    graph.add_node("image_detector", image_detector_node)
+    graph.add_node("evidence_retrieval", evidence_node)
+
+    # Layer 4 — Reasoning
     graph.add_node("aggregator", aggregator_node)
     graph.add_node("explainer", explainer_node)
 
-    graph.set_entry_point("input_router")
+    # Entry point
+    graph.set_entry_point("preprocessor")
 
+    # Route from preprocessor to the right verification tool
     graph.add_conditional_edges(
-        "input_router",
-        _route_after_input,
+        "preprocessor",
+        _route_after_preprocessor,
         {
             "text_classifier": "text_classifier",
             "url_detector": "url_detector",
-            "aggregator": "aggregator",
+            "image_detector": "image_detector",
         },
     )
 
-    graph.add_edge("text_classifier", "aggregator")
-    graph.add_edge("url_detector", "aggregator")
+    # After each verification tool → evidence retrieval
+    graph.add_edge("text_classifier", "evidence_retrieval")
+    graph.add_edge("url_detector", "evidence_retrieval")
+    graph.add_edge("image_detector", "evidence_retrieval")
+
+    # Evidence → Aggregator → Explainer → END
+    graph.add_edge("evidence_retrieval", "aggregator")
     graph.add_edge("aggregator", "explainer")
     graph.add_edge("explainer", END)
 
@@ -206,6 +319,8 @@ def _build_graph():
 
 GRAPH = _build_graph()
 
+
+# ── Public API ─────────────────────────────────────────────────────────────
 
 async def run_graph(input_type: str, content: str, mime_type: str = "image/jpeg", session_id: str = "") -> dict:
     state: GraphState = {
@@ -228,7 +343,7 @@ async def run_graph(input_type: str, content: str, mime_type: str = "image/jpeg"
         "text_result": result.get("text_result"),
         "url_result": result.get("url_result"),
         "image_result": result.get("image_result"),
-        "evidence": [],
+        "evidence": result.get("evidence", []),
         "alert_triggered": alert_triggered,
         "agent_steps": result.get("agent_steps", []),
     }
