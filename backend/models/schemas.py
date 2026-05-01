@@ -2,7 +2,7 @@
 Pydantic schemas for request/response validation.
 """
 from typing import Any, List, Optional
-from pydantic import BaseModel, HttpUrl, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class TextRequest(BaseModel):
@@ -74,9 +74,9 @@ class AnalysisResponse(BaseModel):
     text_result: Optional[Any] = None
     url_result: Optional[Any] = None
     image_result: Optional[Any] = None
-    evidence: List[Any] = []
+    evidence: List[Any] = Field(default_factory=list)
     alert_triggered: bool = False
-    agent_steps: List[Any] = []
+    agent_steps: List[Any] = Field(default_factory=list)
 
 
 class AlertDocument(BaseModel):

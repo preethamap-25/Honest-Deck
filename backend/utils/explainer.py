@@ -19,13 +19,14 @@ def _build_context(state: dict) -> str:
 
     if state.get("text_result"):
         r = state["text_result"]
-        parts.append(f"Text analysis: {r.get('reasoning', '')}")
+        parts.append(f"Text verdict: {r.get('verdict', 'UNVERIFIED')}")
+        parts.append(f"Text analysis: {r.get('explanation') or r.get('reasoning', '')}")
         if r.get("red_flags"):
             parts.append(f"Red flags: {', '.join(r['red_flags'])}")
 
     if state.get("url_result"):
         r = state["url_result"]
-        parts.append(f"URL analysis: {r.get('reasoning', '')}")
+        parts.append(f"URL analysis: {r.get('reasoning') or ', '.join(r.get('reasons', []))}")
 
     if state.get("image_result"):
         r = state["image_result"]

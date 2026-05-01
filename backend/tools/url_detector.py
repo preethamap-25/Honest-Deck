@@ -1,4 +1,4 @@
-"""Phishing URL detector using Ollama llama3 + feature extraction.
+"""Phishing URL detector using Groq + feature extraction.
 
 Returns the requested schema:
 {is_phishing: bool, risk_score: float, reasons: list}
@@ -11,15 +11,16 @@ import json
 import os
 import re
 import urllib.parse
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 from dotenv import load_dotenv
+from groq import Groq
 
 load_dotenv()
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
+_client = Groq(api_key=os.getenv("GROQ_API_KEY", ""))
+_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 SUSPICIOUS_KEYWORDS = [
     "login",
@@ -93,6 +94,14 @@ def _extract_features(url: str) -> dict:
     }
 
 
+def _clamp(value: Any, default: float = 0.0) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = default
+    return min(max(number, 0.0), 1.0)
+
+
 def _heuristic_score(features: dict, domain_age_days: Optional[int]) -> tuple[float, list[str]]:
     score = 0.0
     reasons: list[str] = []
@@ -124,23 +133,58 @@ def _heuristic_score(features: dict, domain_age_days: Optional[int]) -> tuple[fl
     return min(round(score, 3), 1.0), reasons
 
 
-async def _ollama_classify(url: str, features: dict, domain_age_days: Optional[int]) -> Optional[dict]:
-    prompt = (
-        f"You are a cybersecurity expert. Analyze this URL for phishing risk.\n"
-        f"URL: {url}\n"
-        f"Extracted features: {features}\n"
-        f"Domain age days: {domain_age_days}\n\n"
-        f"Respond with ONLY valid JSON:\n"
-        '{"is_phishing": true, "risk_score": 0.0, "reasons": ["..."]}'
-    )
+def _safe_parse(raw: str) -> dict:
+    value = raw.strip()
+    if value.startswith("```"):
+        value = value.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+    parsed = json.loads(value)
+    reasons = parsed.get("reasons") or []
+    if not isinstance(reasons, list):
+        reasons = [str(reasons)]
+    return {
+        "is_phishing": bool(parsed.get("is_phishing", False)),
+        "risk_score": _clamp(parsed.get("risk_score"), 0.0),
+        "reasons": [str(reason) for reason in reasons[:8]],
+        "reasoning": str(parsed.get("reasoning", "")),
+    }
+
+
+async def _groq_classify(
+    url: str,
+    features: dict,
+    domain_age_days: Optional[int],
+    heuristic_score: float,
+    heuristic_reasons: list[str],
+) -> Optional[dict]:
+    prompt = f"""
+You are SEETHRU's Groq-powered phishing URL analyst.
+Analyze the URL with the extracted features. Treat heuristic signals as clues,
+not final proof. Return only JSON with exactly these keys:
+{{
+  "is_phishing": <true|false>,
+  "risk_score": <float 0.0-1.0>,
+  "reasons": ["<short reason>", "..."],
+  "reasoning": "<one concise sentence>"
+}}
+
+URL: {url}
+Extracted features: {features}
+Domain age days: {domain_age_days}
+Heuristic score: {heuristic_score}
+Heuristic reasons: {heuristic_reasons}
+""".strip()
     try:
-        async with httpx.AsyncClient(timeout=8) as client:
-            resp = await client.post(
-                f"{OLLAMA_BASE_URL}/api/generate",
-                json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-            )
-            resp.raise_for_status()
-            return json.loads(resp.json().get("response", "{}"))
+        response = await asyncio.to_thread(
+            _client.chat.completions.create,
+            model=_MODEL,
+            messages=[
+                {"role": "system", "content": "Return valid JSON only. No markdown."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,
+            max_tokens=400,
+        )
+        return _safe_parse(response.choices[0].message.content or "")
     except Exception:
         return None
 
@@ -151,37 +195,42 @@ async def detect_url(url: str) -> dict:
     domain_age_days = await _domain_age_days(hostname)
     heuristic_score, heuristic_reasons = _heuristic_score(features, domain_age_days)
 
-    try:
-        ollama_result = await asyncio.wait_for(
-            _ollama_classify(url, features, domain_age_days),
-            timeout=10,
-        )
-    except Exception:
-        ollama_result = None
-    if ollama_result and "risk_score" in ollama_result:
-        model_score = float(ollama_result.get("risk_score", heuristic_score))
+    groq_result = await _groq_classify(
+        url,
+        features,
+        domain_age_days,
+        heuristic_score,
+        heuristic_reasons,
+    )
+    if groq_result and "risk_score" in groq_result:
+        model_score = _clamp(groq_result.get("risk_score"), heuristic_score)
         blended = round((heuristic_score * 0.5) + (model_score * 0.5), 3)
-        merged_reasons = heuristic_reasons + list(ollama_result.get("reasons", []))
+        merged_reasons = heuristic_reasons + list(groq_result.get("reasons", []))
         return {
             "is_phishing": bool(blended >= 0.6),
             "risk_score": blended,
             "reasons": merged_reasons[:8],
+            "reasoning": groq_result.get("reasoning") or "; ".join(merged_reasons[:3]),
             "features": {
                 **features,
                 "domain_age_days": domain_age_days,
             },
+            "provider": "groq",
         }
 
+    fallback_reasons = heuristic_reasons or ["No strong phishing indicators found."]
     return {
         "is_phishing": bool(heuristic_score >= 0.6),
         "risk_score": heuristic_score,
-        "reasons": heuristic_reasons or ["No strong phishing indicators found."],
+        "reasons": fallback_reasons,
+        "reasoning": "; ".join(fallback_reasons[:3]),
         "features": {
             **features,
             "domain_age_days": domain_age_days,
         },
+        "provider": "heuristic-fallback",
     }
 
 
 def detect_url_sync(url: str) -> dict:
-    return asyncio.get_event_loop().run_until_complete(detect_url(url))
+    return asyncio.run(detect_url(url))

@@ -1,16 +1,24 @@
+"""Groq runtime configuration for SEETHRU.
+
+The filename is kept for backward compatibility with older imports, but the
+backend no longer uses Google ADK/Gemini.
 """
-Google ADK (Agent Development Kit) configuration for SEETHRU.
-"""
+
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
-ADK_CONFIG = {
-    "project_id": os.getenv("GOOGLE_CLOUD_PROJECT", ""),
-    "location": os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
-    "gemini_model": os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
-    "gemini_vision_model": os.getenv("GEMINI_VISION_MODEL", "gemini-2.0-flash"),
-    "temperature": float(os.getenv("GEMINI_TEMPERATURE", "0.2")),
-    "max_output_tokens": int(os.getenv("GEMINI_MAX_TOKENS", "2048")),
+GROQ_CONFIG = {
+    "text_model": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+    "vision_model": os.getenv(
+        "GROQ_VISION_MODEL",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+    ),
+    "temperature": float(os.getenv("GROQ_TEMPERATURE", "0.1")),
+    "max_output_tokens": int(os.getenv("GROQ_MAX_TOKENS", "1024")),
 }
+
+# Backward-compatible alias for any older code importing ADK_CONFIG.
+ADK_CONFIG = GROQ_CONFIG

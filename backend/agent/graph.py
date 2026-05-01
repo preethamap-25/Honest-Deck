@@ -12,6 +12,7 @@ from typing import Any, Literal, TypedDict
 from langgraph.graph import END, StateGraph
 
 from db.mongo import db, save_analysis
+from tools.evidence_retrieval import retrieve_evidence
 from tools.image_detector import detect_image
 from tools.text_classifier import classify_text
 from tools.url_detector import detect_url
@@ -28,6 +29,7 @@ class GraphState(TypedDict, total=False):
     text_result: dict | None
     url_result: dict | None
     image_result: dict | None
+    evidence: list[dict[str, Any]]
 
     risk_score: float
     label: str
@@ -73,16 +75,26 @@ async def input_router(state: GraphState) -> GraphState:
 
 
 async def text_classifier_node(state: GraphState) -> GraphState:
-    result = await classify_text(state.get("content", ""))
+    content = state.get("content", "")
+    evidence = await retrieve_evidence(content)
+    result = await classify_text(content, evidence=evidence)
+
     steps = list(state.get("agent_steps", []))
     steps.append(
         _step(
-            "text_classifier",
-            "Ran misinformation classifier",
-            f"is_fake={result.get('is_fake')} confidence={result.get('confidence')}",
+            "evidence_retrieval",
+            "Fetched live web evidence",
+            f"items={len(evidence)}",
         )
     )
-    return {"text_result": result, "agent_steps": steps}
+    steps.append(
+        _step(
+            "groq_fact_checker",
+            "Ran evidence-grounded fact check",
+            f"verdict={result.get('verdict')} risk={result.get('risk_score')}",
+        )
+    )
+    return {"text_result": result, "evidence": evidence, "agent_steps": steps}
 
 
 async def url_detector_node(state: GraphState) -> GraphState:
@@ -111,13 +123,17 @@ async def aggregator_node(state: GraphState) -> GraphState:
     verdict = "Safe"
 
     if routed == "text" and text_result:
-        confidence = float(text_result.get("confidence", 0.5))
-        if bool(text_result.get("is_fake", False)):
-            risk_score = confidence
-            verdict = "Fake"
+        if "risk_score" in text_result:
+            risk_score = float(text_result.get("risk_score", 0.45))
+            verdict = str(text_result.get("verdict", "UNVERIFIED")).title()
         else:
-            risk_score = max(0.0, 1.0 - confidence) * 0.4
-            verdict = "Safe"
+            confidence = float(text_result.get("confidence", 0.5))
+            if bool(text_result.get("is_fake", False)):
+                risk_score = confidence
+                verdict = "Fake"
+            else:
+                risk_score = max(0.0, 1.0 - confidence) * 0.4
+                verdict = "Safe"
     elif routed == "url" and url_result:
         risk_score = float(url_result.get("risk_score", 0.0))
         verdict = "Phishing" if bool(url_result.get("is_phishing", False)) else "Safe"
@@ -151,7 +167,7 @@ async def explainer_node(state: GraphState) -> GraphState:
                     "text_result": state.get("text_result"),
                     "url_result": state.get("url_result"),
                     "image_result": state.get("image_result"),
-                    "evidence": [],
+                    "evidence": state.get("evidence", []),
                 }
             ),
             timeout=20,
@@ -228,7 +244,7 @@ async def run_graph(input_type: str, content: str, mime_type: str = "image/jpeg"
         "text_result": result.get("text_result"),
         "url_result": result.get("url_result"),
         "image_result": result.get("image_result"),
-        "evidence": [],
+        "evidence": result.get("evidence", []),
         "alert_triggered": alert_triggered,
         "agent_steps": result.get("agent_steps", []),
     }

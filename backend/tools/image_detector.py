@@ -31,27 +31,37 @@ metadata anomalies, and visual inconsistencies. Return ONLY the JSON, no markdow
 
 
 async def detect_image(image_b64: str, mime_type: str = "image/jpeg") -> dict:
-    response = await asyncio.to_thread(
-        _client.chat.completions.create,
-        model=_VISION_MODEL,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": _VISION_PROMPT},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{mime_type};base64,{image_b64}",
+    try:
+        response = await asyncio.to_thread(
+            _client.chat.completions.create,
+            model=_VISION_MODEL,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": _VISION_PROMPT},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{image_b64}",
+                            },
                         },
-                    },
-                ],
-            }
-        ],
-        temperature=0.1,
-        max_tokens=1024,
-    )
-    raw = response.choices[0].message.content.strip()
+                    ],
+                }
+            ],
+            temperature=0.1,
+            max_tokens=1024,
+        )
+        raw = response.choices[0].message.content.strip()
+    except Exception:
+        return {
+            "risk_score": 0.45,
+            "label": "SUSPICIOUS",
+            "reasoning": "Groq vision analysis is unavailable at the moment.",
+            "artifacts": [],
+            "confidence": 0.0,
+        }
+
     try:
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
