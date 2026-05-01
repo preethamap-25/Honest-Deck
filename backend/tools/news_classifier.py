@@ -9,8 +9,8 @@ from groq import Groq
 
 load_dotenv()
 
-_client = Groq(api_key=os.getenv("GROQ_API_KEY", ""))
-_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+_client = Groq(api_key=os.getenv("GROQ_API_KEY", "").strip())
+_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
 
 _CLASSIFY_PROMPT = """You are an expert news verification agent. Given a news article title and description, classify it.
 Return ONLY a valid JSON object:

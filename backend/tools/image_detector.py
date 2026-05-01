@@ -10,8 +10,8 @@ from groq import Groq
 
 load_dotenv()
 
-_client = Groq(api_key=os.getenv("GROQ_API_KEY", ""))
-_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+_client = Groq(api_key=os.getenv("GROQ_API_KEY", "").strip())
+_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct").strip()
 
 _VISION_PROMPT = """You are an expert digital forensics analyst specializing in
 detecting AI-generated images, deepfakes, and photo manipulations.

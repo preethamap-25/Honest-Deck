@@ -15,8 +15,8 @@ from groq import Groq
 
 load_dotenv()
 
-_client = Groq(api_key=os.getenv("GROQ_API_KEY", ""))
-_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+_client = Groq(api_key=os.getenv("GROQ_API_KEY", "").strip())
+_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
 
 _SYSTEM_PROMPT = """You are SEETHRU, a real-time fact-checking agent.
 Judge the user claim using the provided evidence snippets. Do not claim certainty
