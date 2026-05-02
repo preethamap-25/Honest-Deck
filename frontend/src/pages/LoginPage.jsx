@@ -20,7 +20,7 @@ export default function LoginPage() {
     try {
       const success = await login(username, password);
       if (success) {
-        navigate("/dashboard");
+        navigate("/");
       } else {
         setError("Invalid username or password");
       }
@@ -90,14 +90,10 @@ export default function LoginPage() {
             {isLoading ? "Logging in..." : "Login"}
           </button>
         </form>
-
-        <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <p className="text-sm text-gray-600 mb-2">
-            <strong>Demo Credentials:</strong>
-          </p>
-          <p className="text-sm text-gray-600">Username: <code className="bg-white px-2 py-1 rounded">admin</code></p>
-          <p className="text-sm text-gray-600">Password: <code className="bg-white px-2 py-1 rounded">admin123</code></p>
+        <div className="mt-4 text-center text-sm text-gray-600">
+          Don't have an account? <a className="text-blue-600 hover:underline" href="/signin">Sign up</a>
         </div>
+
       </div>
     </div>
   );

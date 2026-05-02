@@ -9,6 +9,7 @@ import HistoryPage from "./pages/HistoryPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
+import SignInPage from "./pages/SignInPage.jsx";
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, authLoading } = useApp();
@@ -30,6 +31,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/signin" element={<SignInPage />} />
       
       <Route
         element={

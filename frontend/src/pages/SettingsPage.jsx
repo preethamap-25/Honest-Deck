@@ -2,6 +2,7 @@ import { Settings, Bell, Palette, Globe, Shield, Database, ChevronRight, Moon, S
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../context/Appcontext";
 import { useToast } from "../components/ToastProvider";
+import { analyzeUrl } from "../utils/api";
 import Topbar from "../components/Topbar";
 
 function Toggle({ value, onChange }) {
@@ -60,6 +61,20 @@ export default function SettingsPage() {
     await logout();
     navigate("/login");
   };
+
+//   const [urlInput, setUrlInput] = useState("");
+//   const [urlResult, setUrlResult] = useState(null);
+
+//   const handleCheckUrl = async () => {
+//     if (!urlInput) return addToast("Please enter a URL.", "error");
+//     try {
+//       addToast("Checking URL…", "info");
+//       const res = await analyzeUrl(urlInput);
+//       setUrlResult(res);
+//       addToast(`Result: ${res.label} (${Math.round(res.confidence * 100)}%)`, "success");
+//     } catch (err) {
+//       addToast(err.message || "URL check failed.", "error");
+//     }
 
   return (
     <div className="flex flex-col h-full">
@@ -191,6 +206,24 @@ export default function SettingsPage() {
           <LinkRow label="Terms of Service" onClick={() => addToast("Opening Terms of Service…", "info")} />
           <LinkRow label="Privacy Policy" onClick={() => addToast("Opening Privacy Policy…", "info")} />
         </Section>
+
+        {/* URL Checker */}
+        {/* <Section title="URL Checker" icon={Link}>
+          <div className="px-4 py-3">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Enter a URL to check whether its content appears trustworthy.</p>
+            <div className="flex gap-2">
+              <input value={urlInput} onChange={(e) => setUrlInput(e.target.value)} placeholder="https://example.com/article"
+                className="flex-1 bg-slate-100 dark:bg-slate-700 border border-transparent rounded-lg px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-300" />
+              <button onClick={handleCheckUrl} className="px-3 py-1.5 bg-blue-600 text-white rounded">Check</button>
+            </div>
+            {urlResult && (
+              <div className="mt-3 text-sm text-slate-700">
+                <div><strong>Verdict:</strong> {urlResult.label} ({Math.round(urlResult.confidence * 100)}%)</div>
+                <div className="mt-1 text-xs text-slate-500">{urlResult.explanation}</div>
+              </div>
+            )}
+          </div>
+        </Section> */}
 
         {/* Danger Zone */}
         <div className="bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/40 rounded-2xl p-4">

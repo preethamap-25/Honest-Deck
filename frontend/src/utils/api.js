@@ -161,6 +161,22 @@ export async function login(username, password) {
   return data;
 }
 
+// Register / create account (backend may not provide this; if absent it will return 404)
+export async function register(username, password) {
+  const response = await fetch(`${API_BASE_URL}/api/v1/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Registration failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
 export async function logout() {
   try {
     await apiCall("/api/v1/auth/logout", { method: "POST" });
@@ -211,6 +227,13 @@ export async function analyzeText(text) {
   return apiCall("/api/analyze/text", {
     method: "POST",
     body: JSON.stringify({ text }),
+  });
+}
+
+export async function analyzeUrl(url) {
+  return apiCall("/api/analyze/url", {
+    method: "POST",
+    body: JSON.stringify({ url }),
   });
 }
 
