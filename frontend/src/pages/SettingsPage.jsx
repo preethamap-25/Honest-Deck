@@ -1,4 +1,5 @@
 import { Settings, Bell, Palette, Globe, Shield, Database, ChevronRight, Moon, Sun, Monitor, Sliders, Link } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useApp } from "../context/Appcontext";
 import { useToast } from "../components/ToastProvider";
 import Topbar from "../components/Topbar";
@@ -52,8 +53,13 @@ function LinkRow({ label, desc, onClick }) {
 const TRUSTED_SOURCES = ["Reuters", "Associated Press", "BBC News", "WHO", "CDC", "PolitiFact", "Snopes", "Full Fact"];
 
 export default function SettingsPage() {
-  const { theme, setTheme, prefs, updatePref } = useApp();
+  const { theme, setTheme, prefs, updatePref,logout } = useApp();
   const { addToast } = useToast();
+  const navigate = useNavigate();
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login");
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -138,9 +144,9 @@ export default function SettingsPage() {
               <option value="large">Large</option>
             </select>
           </Row>
-          <Row label="Compact Mode" desc="Reduce spacing for a denser layout">
+          {/* <Row label="Compact Mode" desc="Reduce spacing for a denser layout">
             <Toggle value={prefs.compactMode} onChange={(v) => { updatePref("compactMode", v); addToast(v ? "Compact mode enabled." : "Compact mode disabled.", "success"); }} />
-          </Row>
+          </Row> */}
         </Section>
 
         {/* Notifications */}
@@ -160,7 +166,7 @@ export default function SettingsPage() {
         </Section>
 
         {/* Language */}
-        <Section title="Language & Region" icon={Globe}>
+        {/* <Section title="Language & Region" icon={Globe}>
           <Row label="Interface language">
             <select value={prefs.language} onChange={(e) => { updatePref("language", e.target.value); addToast("Language preference saved.", "success"); }}
               className="bg-slate-100 dark:bg-slate-700 border border-transparent rounded-lg px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-300">
@@ -171,13 +177,13 @@ export default function SettingsPage() {
               <option value="fr">Français</option>
             </select>
           </Row>
-        </Section>
+        </Section> */}
 
         {/* Advanced */}
-        <Section title="Advanced" icon={Sliders}>
+        {/* <Section title="Advanced" icon={Sliders}>
           <LinkRow label="Export fact-check history" desc="Download all your checks as JSON" onClick={() => addToast("Export feature coming soon.", "info")} />
           <LinkRow label="API Access" desc="Integrate SeeThru into your own tools" onClick={() => addToast("API access coming soon.", "info")} />
-        </Section>
+        </Section> */}
 
         {/* Data */}
         <Section title="Data & Privacy" icon={Database}>
@@ -188,15 +194,10 @@ export default function SettingsPage() {
 
         {/* Danger Zone */}
         <div className="bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/40 rounded-2xl p-4">
-          <h3 className="font-semibold text-sm text-red-700 dark:text-red-400 mb-3">Data Management</h3>
           <div className="space-y-2">
-            <button onClick={() => addToast("All fact-check history has been cleared.", "warning")}
-              className="w-full py-2.5 px-3 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm font-medium rounded-xl hover:bg-red-100 dark:hover:bg-red-900/30 transition-all">
-              Clear all fact-check history
-            </button>
-            <button onClick={() => addToast("Account deletion is disabled in demo mode.", "error")}
+            <button onClick={handleLogout}
               className="w-full py-2.5 px-3 bg-red-500 text-white text-sm font-medium rounded-xl hover:bg-red-600 transition-all">
-              Delete account and all data
+              Logout
             </button>
           </div>
         </div>

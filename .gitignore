@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 seethru/
+__pycache__/
+*.pyc
+.env

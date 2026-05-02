@@ -81,7 +81,7 @@ export default function ChatPage() {
             onModeChange={setAgentMode}
           />
           <p className="text-center text-[11px] text-slate-400 mt-2">
-            Honest Deck analyses claims using AI and cross-references trusted sources.{" "}
+            SeeThru analyses claims using AI and cross-references trusted sources.{" "}
             <span className="text-blue-500">Not a substitute for professional journalism.</span>
           </p>
         </div>
@@ -100,7 +100,7 @@ function EmptyState({ onSuggest }) {
         Is it true?
       </h2>
       <p className="text-slate-500 dark:text-slate-400 text-sm max-w-sm mb-8 leading-relaxed">
-        Paste any news headline, article excerpt, or URL and Honest Deck&apos;s AI agent will fact-check it against verified sources and return a credibility verdict.
+        Paste any news headline, article excerpt, or URL and SeeThru&apos;s AI agent will fact-check it against verified sources and return a credibility verdict.
       </p>
 
       {/* Example claims */}

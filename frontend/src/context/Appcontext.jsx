@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
-import { mockChecks, mockUser } from "../data/mockData";
+import { useAuth } from "../hooks/useAuth";
+import { mockUser } from "../data/mockData";
 
 const AppContext = createContext(null);
 
@@ -20,10 +21,12 @@ const defaultPrefs = {
 };
 
 export function AppProvider({ children }) {
+  const auth = useAuth();
+  
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [user, setUser] = useState(mockUser);
-  const [checks, setChecks] = useState(mockChecks);
-  const [activeCheckId, setActiveCheckId] = useState(mockChecks[0]?.id ?? null);
+  const [user, setUser] = useState(() => (auth.user));
+  const [checks, setChecks] = useState([]);
+  const [activeCheckId, setActiveCheckId] = useState(null);
   const [theme, setTheme] = useState("light");
   const [prefs, setPrefs] = useState(defaultPrefs);
   const [notifications, setNotifications] = useState([]);
@@ -85,18 +88,23 @@ export function AppProvider({ children }) {
       prev.map((c) => {
         if (c.id !== checkId) return c;
 
-        // Extract verdict/score from assistant message if present
         let verdict = c.verdict;
         let score = c.score;
         let title = c.title;
 
         if (message.role === "assistant") {
           try {
-            const match = message.content.match(/FACT_CHECK_START\n([\s\S]*?)\nFACT_CHECK_END/);
-            if (match) {
-              const parsed = JSON.parse(match[1]);
-              verdict = parsed.verdict;
-              score = parsed.score;
+            const parsed = message.analysis ?? null;
+            if (parsed) {
+              verdict = parsed.verdict ?? verdict;
+              score = parsed.confidence ?? score;
+            } else {
+              const match = message.content.match(/FACT_CHECK_START\n([\s\S]*?)\nFACT_CHECK_END/);
+              if (match) {
+                const legacy = JSON.parse(match[1]);
+                verdict = legacy.verdict;
+                score = legacy.score;
+              }
             }
           } catch { /* ignore */ }
         }
@@ -129,6 +137,15 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
+      // Auth
+      isAuthenticated: auth.isAuthenticated,
+      authLoading: auth.isLoading,
+      authError: auth.error,
+      authUser: auth.user,
+      login: auth.login,
+      logout: auth.logout,
+      
+      // UI
       sidebarOpen, setSidebarOpen,
       user, updateUser,
       checks, activeCheckId, setActiveCheckId, activeCheck,

@@ -20,6 +20,14 @@ export default function Sidebar() {
     createCheck, deleteCheck, renameCheck, togglePin,
   } = useApp();
 
+  // Prefer authenticated user info when available (from login), fallback to app `user` (which may be mock)
+  const profileSource = (typeof authUser !== 'undefined' && authUser) ? authUser : user;
+  const profileName = profileSource?.name ?? profileSource?.full_name ?? profileSource?.username ?? profileSource?.email ?? "User";
+  const profileEmail = profileSource?.email ?? profileSource?.username ?? "";
+  const profileInitials = profileSource?.initials ?? (
+    profileName.split(" ").map(s => s[0] || "").slice(0,2).join("").toUpperCase()
+  );
+
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [renamingId, setRenamingId] = useState(null);
@@ -156,32 +164,38 @@ export default function Sidebar() {
       </div>
 
       {/* Profile Footer */}
+      {/* Profile Footer */}
       <div className="border-t border-slate-100 dark:border-slate-800 px-3 py-3 flex items-center gap-2">
-        <NavLink
+        {/*<NavLink
           to="/profile"
           className={({ isActive }) =>
             `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer flex-1 min-w-0
             ${isActive ? "bg-blue-50 dark:bg-blue-900/30" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`
           }
         >
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
-            {user.initials}
+           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+            {profileInitials}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-slate-800 dark:text-white truncate">{user.name}</p>
-            <p className="text-xs text-slate-400 truncate">{user.email}</p>
-          </div>
-        </NavLink>
+            <p className="text-xs text-slate-400 truncate">{user.username}</p>
+          </div> 
+        </NavLink>*/}
         {/* Settings icon beside name */}
+        {/* Settings button */}
         <NavLink
           to="/settings"
-          title="Settings"
           className={({ isActive }) =>
-            `shrink-0 p-2 rounded-xl transition-all
-            ${isActive ? "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"}`
+            `flex items-center gap-2 px-3 py-2 rounded-xl transition-all text-sm font-medium
+            ${
+              isActive
+                ? "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+            }`
           }
         >
           <Settings size={16} />
+          <span>Settings</span>
         </NavLink>
       </div>
     </aside>
