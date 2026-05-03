@@ -111,7 +111,7 @@ export default function HistoryPage() {
                       {check.title}
                     </p>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      {new Date(check.updatedAt).toLocaleDateString("en-IN", { month: "long", day: "numeric", year: "numeric" })}
+                      {new Date(check.updatedAt).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
                     </p>
                     {check.tags?.length > 0 && (
                       <div className="flex gap-1 mt-1.5 flex-wrap">

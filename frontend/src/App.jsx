@@ -7,6 +7,8 @@ import DashboardPage from "./pages/DashboardPage.jsx";
 import HistoryPage from "./pages/HistoryPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
+import LoginPage from "./pages/LoginPage.jsx";
+import SignupPage from "./pages/SignupPage.jsx";
 
 export default function App() {
   return (
@@ -14,6 +16,8 @@ export default function App() {
       <AppProvider>
         <ToastProvider>
           <Routes>
+            <Route path="login" element={<LoginPage />} />
+            <Route path="signup" element={<SignupPage />} />
             <Route element={<RootLayout />}>
               <Route index element={<ChatPage />} />
               <Route path="dashboard" element={<DashboardPage />} />

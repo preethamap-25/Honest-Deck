@@ -1,19 +1,34 @@
-import { useState } from "react";
-import { Send, Link, ChevronDown, Check, Zap } from "lucide-react";
+import { useState, useRef } from "react";
+import { Send, Link, ChevronDown, Check, Zap, Image } from "lucide-react";
 import { AGENT_MODES } from "../data/mockData";
 import { useToast } from "./ToastProvider";
 
 export default function NewsInput({ onSubmit, disabled, mode, onModeChange }) {
   const [value, setValue] = useState("");
   const [modeOpen, setModeOpen] = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const fileInputRef = useRef(null);
   const { addToast } = useToast();
 
   const currentMode = AGENT_MODES.find((m) => m.id === mode) || AGENT_MODES[0];
 
   const submit = () => {
-    if (!value.trim() || disabled) return;
-    onSubmit(value);
+    if ((!value.trim() && !imageFile) || disabled) return;
+    onSubmit(value, { file: imageFile });
     setValue("");
+    setImageFile(null);
+  };
+
+  const handleImageSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith("image/")) {
+        addToast("Please select an image file (PNG, JPG, etc.)", "warning");
+        return;
+      }
+      setImageFile(file);
+      addToast(`Image attached: ${file.name}`, "info");
+    }
   };
 
   const pasteUrl = async () => {
@@ -86,12 +101,29 @@ export default function NewsInput({ onSubmit, disabled, mode, onModeChange }) {
             <Link size={12} />
             Paste URL
           </button>
+
+          {/* Image Upload */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium transition-all"
+            title="Upload image for authenticity analysis"
+          >
+            <Image size={12} />
+            {imageFile ? imageFile.name.slice(0, 12) + "…" : "Image"}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleImageSelect}
+            className="hidden"
+          />
         </div>
 
         {/* Submit */}
         <button
           onClick={submit}
-          disabled={!value.trim() || disabled}
+          disabled={(!value.trim() && !imageFile) || disabled}
           className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
         >
           <Send size={13} />

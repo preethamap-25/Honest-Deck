@@ -1,7 +1,18 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
-import { mockChecks, mockUser } from "../data/mockData";
+import { useNavigate, useLocation } from "react-router-dom";
 
 const AppContext = createContext(null);
+
+const defaultUser = {
+  name: "",
+  email: "",
+  avatar: null,
+  initials: "",
+  plan: "Free",
+  joined: "",
+  bio: "",
+  usage: { checksRun: 0, falseNewsCaught: 0, tokensUsed: 0, tokensLimit: 1000000 },
+};
 
 const defaultPrefs = {
   notifMessages: true,
@@ -20,10 +31,35 @@ const defaultPrefs = {
 };
 
 export function AppProvider({ children }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Auth state
+  const [token, setToken] = useState(() => localStorage.getItem("token"));
+  const savedUser = token ? JSON.parse(localStorage.getItem("user") || "null") : null;
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [user, setUser] = useState(mockUser);
-  const [checks, setChecks] = useState(mockChecks);
-  const [activeCheckId, setActiveCheckId] = useState(mockChecks[0]?.id ?? null);
+  const [user, setUser] = useState(savedUser?.profile || defaultUser);
+  const [checks, setChecks] = useState(() => {
+    try {
+      const saved = localStorage.getItem("checks");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch { /* ignore */ }
+    return [];
+  });
+  const [activeCheckId, setActiveCheckId] = useState(() => {
+    try {
+      const saved = localStorage.getItem("checks");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed[0]?.id ?? null;
+      }
+    } catch { /* ignore */ }
+    return null;
+  });
   const [theme, setTheme] = useState("light");
   const [prefs, setPrefs] = useState(defaultPrefs);
   const [notifications, setNotifications] = useState([]);
@@ -44,6 +80,36 @@ export function AppProvider({ children }) {
     const map = { small: "text-sm", medium: "text-base", large: "text-lg" };
     if (map[prefs.fontSize]) root.classList.add(map[prefs.fontSize]);
   }, [prefs.fontSize]);
+
+  // Persist checks to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem("checks", JSON.stringify(checks));
+    } catch { /* storage full or unavailable */ }
+  }, [checks]);
+
+  // Redirect to login if not authenticated (skip auth pages)
+  useEffect(() => {
+    const publicPaths = ["/login", "/signup"];
+    if (!token && !publicPaths.includes(location.pathname)) {
+      navigate("/login", { replace: true });
+    }
+  }, [token, location.pathname, navigate]);
+
+  const login = useCallback((newToken, userData) => {
+    localStorage.setItem("token", newToken);
+    localStorage.setItem("user", JSON.stringify(userData));
+    setToken(newToken);
+    if (userData?.profile) setUser(userData.profile);
+    if (userData?.prefs) setPrefs((p) => ({ ...p, ...userData.prefs }));
+  }, []);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setToken(null);
+    navigate("/login");
+  }, [navigate]);
 
   const activeCheck = checks.find((c) => c.id === activeCheckId) ?? null;
 
@@ -135,6 +201,7 @@ export function AppProvider({ children }) {
       createCheck, deleteCheck, renameCheck, togglePin, addMessage,
       theme, setTheme,
       prefs, updatePref,
+      token, login, logout,
       notifications, unreadCount, markNotificationRead, markAllRead,
     }}>
       {children}

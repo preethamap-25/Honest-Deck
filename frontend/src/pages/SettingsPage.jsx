@@ -201,7 +201,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <p className="text-center text-xs text-slate-400 pb-2">SeeThru v1.0.0 · AI-Powered News Fact Checker</p>
+        <p className="text-center text-xs text-slate-400 pb-2">SeeThru v{import.meta.env.VITE_APP_VERSION || "1.0.0"} · AI-Powered News Fact Checker</p>
       </div>
     </div>
   );

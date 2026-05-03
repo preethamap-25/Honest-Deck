@@ -220,7 +220,7 @@ export default function MessageBubble({ message }) {
         {/* Meta */}
         <div className={`flex items-center gap-2 px-1 ${isUser ? "flex-row-reverse" : ""}`}>
           <span className="text-[10px] text-slate-400">
-            {new Date(message.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+            {new Date(message.timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
           </span>
           {!isUser && (
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

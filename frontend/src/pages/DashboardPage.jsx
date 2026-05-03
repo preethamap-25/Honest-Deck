@@ -6,245 +6,75 @@ import {
 } from "lucide-react";
 import Topbar from "../components/Topbar";
 import { useApp } from "../context/Appcontext";
+import { useDashboard } from "../hooks/useDashboard";
 import { getVerdict, TAG_COLORS } from "../data/verdictConfig";
 
-/* ─── Mock live news data ─────────────────────────────────── */
-const LIVE_NEWS = [
-  {
-    id: "ln-1",
-    headline: "Scientists discover single-dose drug that 'cures all cancers', trial results leaked",
-    source: "ViralHealth.net",
-    sourceType: "unverified",
-    category: "Health",
-    time: "2 min ago",
-    excerpt: "A widely shared social media post claims a new pharmaceutical compound has shown 99% efficacy against all forms of cancer in a leaked Phase 1 trial.",
-    verdict: "FALSE",
-    score: 4,
-    checking: false,
-    breaking: true,
-  },
-  {
-    id: "ln-2",
-    headline: "Global average temperature breaks record for third consecutive month, NOAA confirms",
-    source: "Reuters",
-    sourceType: "trusted",
-    category: "Climate",
-    time: "8 min ago",
-    excerpt: "Data released by the National Oceanic and Atmospheric Administration shows June 2025 was the hottest June on record, continuing a trend that began in April.",
-    verdict: "TRUE",
-    score: 96,
-    checking: false,
-    breaking: false,
-  },
-  {
-    id: "ln-3",
-    headline: "New government policy will freeze all private bank accounts starting July 1",
-    source: "FreeTruthNews.io",
-    sourceType: "unreliable",
-    category: "Economy",
-    time: "11 min ago",
-    excerpt: "Posts circulating on Telegram and WhatsApp claim the Reserve Bank of India will enforce a mandatory freeze on all private bank accounts under a new emergency economic policy.",
-    verdict: "FALSE",
-    score: 2,
-    checking: false,
-    breaking: true,
-  },
-  {
-    id: "ln-4",
-    headline: "India's space agency ISRO successfully tests reusable rocket engine for lunar mission",
-    source: "The Hindu",
-    sourceType: "trusted",
-    category: "Science",
-    time: "19 min ago",
-    excerpt: "ISRO confirmed a successful hot-fire test of its CE-20 cryogenic engine variant intended for the upcoming Chandrayaan-4 mission.",
-    verdict: "TRUE",
-    score: 92,
-    checking: false,
-    breaking: false,
-  },
-  {
-    id: "ln-5",
-    headline: "Study claims smartphones cause brain tumours after 10 years of use",
-    source: "NaturalNewsTruth.com",
-    sourceType: "unreliable",
-    category: "Health",
-    time: "25 min ago",
-    excerpt: "An article citing an unnamed university study claims that daily smartphone use for a decade significantly increases the risk of glioblastoma.",
-    verdict: "MOSTLY_FALSE",
-    score: 17,
-    checking: false,
-    breaking: false,
-  },
-  {
-    id: "ln-6",
-    headline: "Elon Musk announces X will become a fully regulated financial services platform by end of 2025",
-    source: "Financial Times",
-    sourceType: "trusted",
-    category: "Technology",
-    time: "34 min ago",
-    excerpt: "X Corp has applied for financial services licences in multiple countries, though the 'end of 2025' timeline has not been confirmed by regulatory bodies.",
-    verdict: "MIXED",
-    score: 54,
-    checking: false,
-    breaking: false,
-  },
-  {
-    id: "ln-7",
-    headline: "WHO declares new 'Disease X' outbreak in Central Africa — thousands feared dead",
-    source: "PanicNews24.com",
-    sourceType: "unreliable",
-    category: "Health",
-    time: "38 min ago",
-    excerpt: "Viral posts claim the WHO has declared an emergency outbreak of Disease X with unconfirmed death tolls circulating on social media.",
-    verdict: "MOSTLY_FALSE",
-    score: 11,
-    checking: false,
-    breaking: true,
-  },
-  {
-    id: "ln-8",
-    headline: "India passes 100GW solar capacity milestone, becomes third globally",
-    source: "BBC News",
-    sourceType: "trusted",
-    category: "Climate",
-    time: "47 min ago",
-    excerpt: "India's Ministry of New and Renewable Energy confirmed the milestone, placing the country third after China and the United States in installed solar capacity.",
-    verdict: "TRUE",
-    score: 94,
-    checking: false,
-    breaking: false,
-  },
-  {
-    id: "ln-9",
-    headline: "Eating turmeric every morning cures diabetes in 3 weeks, doctors confirm",
-    source: "AyurvedaToday.in",
-    sourceType: "unverified",
-    category: "Health",
-    time: "52 min ago",
-    excerpt: "A viral article claims Indian medical doctors have 'confirmed' that consuming raw turmeric paste each morning eliminates Type 2 diabetes within 21 days.",
-    verdict: "FALSE",
-    score: 6,
-    checking: false,
-    breaking: false,
-  },
-  {
-    id: "ln-10",
-    headline: "OpenAI GPT-5 achieves human-level performance on 95% of professional licensing exams",
-    source: "The Verge",
-    sourceType: "trusted",
-    category: "Technology",
-    time: "1h ago",
-    excerpt: "OpenAI's internal evaluation report, published alongside the model launch, shows GPT-5 passing bar exams, medical boards, and CPA tests at rates exceeding 90th percentile human scores.",
-    verdict: "MOSTLY_TRUE",
-    score: 78,
-    checking: false,
-    breaking: false,
-  },
-  {
-    id: "ln-11",
-    headline: "Major earthquake predicted for Tokyo within 48 hours by AI model",
-    source: "QuakePredictAI.com",
-    sourceType: "unreliable",
-    category: "Science",
-    time: "1h 15m ago",
-    excerpt: "An AI startup claims its proprietary seismic prediction model has identified a 94% probability of a magnitude 7+ earthquake hitting greater Tokyo in the next two days.",
-    verdict: "MOSTLY_FALSE",
-    score: 19,
-    checking: false,
-    breaking: true,
-  },
-  {
-    id: "ln-12",
-    headline: "Parliament passes Digital India Data Protection Bill with bipartisan support",
-    source: "The Indian Express",
-    sourceType: "trusted",
-    category: "Politics",
-    time: "2h ago",
-    excerpt: "The Lok Sabha passed the Digital Personal Data Protection Bill with amendments, establishing India's first comprehensive data protection framework.",
-    verdict: "TRUE",
-    score: 91,
-    checking: false,
-    breaking: false,
-  },
-];
-
-// 3 articles that start in "checking" state and resolve over time
-const INITIALLY_CHECKING = ["ln-c1", "ln-c2", "ln-c3"];
-
-const LIVE_CHECKING = [
-  {
-    id: "ln-c1",
-    headline: "New WhatsApp policy will charge users ₹50/month starting August",
-    source: "Viral WhatsApp Forward",
-    sourceType: "unverified",
-    category: "Technology",
-    time: "Just now",
-    excerpt: "A widely forwarded WhatsApp message claims the platform is rolling out mandatory subscription fees for Indian users from August 2025.",
-    verdict: "FALSE",
-    score: 3,
-    checking: true,
-    breaking: true,
-    resolveAfter: 6000,
-  },
-  {
-    id: "ln-c2",
-    headline: "NASA confirms asteroid 2029 Apophis will make closest-ever flyby next month",
-    source: "Space.com",
-    sourceType: "trusted",
-    category: "Science",
-    time: "Just now",
-    excerpt: "Apophis is confirmed to make a historically close Earth pass in 2029, with NASA having updated its trajectory data following new observations.",
-    verdict: "MOSTLY_TRUE",
-    score: 81,
-    checking: true,
-    breaking: false,
-    resolveAfter: 10000,
-  },
-  {
-    id: "ln-c3",
-    headline: "Opposition parties allege voting machines were hacked in recent state elections",
-    source: "NDTV",
-    sourceType: "trusted",
-    category: "Politics",
-    time: "3 min ago",
-    excerpt: "Several opposition parties have filed petitions with the Election Commission claiming discrepancies in EVM data during the recent state assembly elections.",
-    verdict: "MIXED",
-    score: 45,
-    checking: true,
-    breaking: false,
-    resolveAfter: 14000,
-  },
-];
-
-const ALL_NEWS = [...LIVE_CHECKING, ...LIVE_NEWS];
-const CATEGORIES = ["All", "Health", "Politics", "Science", "Technology", "Climate", "Economy"];
-
+/* ─── Source badge config ─────────────────────────────────── */
 const SOURCE_BADGE = {
   trusted:    { label: "Trusted Source", color: "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30" },
   unverified: { label: "Unverified Source", color: "text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30" },
   unreliable: { label: "Known Unreliable", color: "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30" },
+  api:        { label: "API Submission", color: "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30" },
+  extension:  { label: "Browser Extension", color: "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30" },
+  manual:     { label: "Manual Check", color: "text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/30" },
 };
+
+const CATEGORIES = ["All", "High Risk", "Checking", "Verified", "False"];
+
+/* ─── Helper: map backend feed items to display format ───── */
+function mapFeedItem(item) {
+  const verdictMap = {
+    true: "TRUE",
+    false: "FALSE",
+    misleading: "MOSTLY_FALSE",
+    partially_true: "MIXED",
+    unverifiable: "UNVERIFIABLE",
+  };
+
+  return {
+    id: item.id,
+    headline: item.text?.slice(0, 120) || "Untitled claim",
+    source: item.source || "api",
+    sourceType: item.source || "api",
+    category: item.risk_level === "dangerous" ? "High Risk" :
+              item.checking ? "Checking" :
+              item.verdict === "false" || item.verdict === "misleading" ? "False" : "Verified",
+    time: item.created_at ? _timeAgo(item.created_at) : "Just now",
+    excerpt: item.explanation || item.text?.slice(0, 200) || "",
+    verdict: verdictMap[item.verdict] || (item.checking ? null : "UNVERIFIABLE"),
+    score: item.confidence != null ? Math.round(item.confidence * 100) : null,
+    checking: item.checking,
+    breaking: item.risk_level === "dangerous" || item.priority >= 7,
+  };
+}
+
+function _timeAgo(isoStr) {
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
 
 /* ─── Page ───────────────────────────────────────────────── */
 export default function DashboardPage() {
   const { setActiveCheckId, createCheck } = useApp();
   const navigate = useNavigate();
+  const { liveFeed, alerts, stats, isLoading, loadAll, loadLiveFeed, startPolling, stopPolling } = useDashboard();
   const [category, setCategory] = useState("All");
-  const [checkingState, setCheckingState] = useState(
-    Object.fromEntries(INITIALLY_CHECKING.map((id) => [id, true])),
-  );
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
   const [ticker, setTicker] = useState(0);
 
-  // Resolve checking articles one by one
+  // Load data on mount and start dynamic polling
   useEffect(() => {
-    LIVE_CHECKING.forEach((item) => {
-      setTimeout(() => {
-        setCheckingState((prev) => ({ ...prev, [item.id]: false }));
-      }, item.resolveAfter);
-    });
-  }, []);
+    loadAll();
+    const pollInterval = parseInt(import.meta.env.VITE_POLL_INTERVAL_MS || "30000", 10);
+    startPolling(pollInterval); // refresh for real-time updates
+    return () => stopPolling();
+  }, [loadAll, startPolling, stopPolling]);
 
   // Pulse ticker for live dot
   useEffect(() => {
@@ -252,9 +82,11 @@ export default function DashboardPage() {
     return () => clearInterval(id);
   }, []);
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => { setRefreshing(false); setLastRefresh(new Date()); }, 1400);
+    await loadLiveFeed();
+    setRefreshing(false);
+    setLastRefresh(new Date());
   };
 
   const factCheckThis = (item) => {
@@ -263,13 +95,15 @@ export default function DashboardPage() {
     navigate("/");
   };
 
-  const displayed = ALL_NEWS.filter(
+  // Map backend data to display items dynamically
+  const displayItems = liveFeed.map(mapFeedItem);
+  const filtered = displayItems.filter(
     (n) => category === "All" || n.category === category,
   );
 
-  const falseCount = LIVE_NEWS.filter((n) => n.verdict === "FALSE" || n.verdict === "MOSTLY_FALSE").length;
-  const trueCount  = LIVE_NEWS.filter((n) => n.verdict === "TRUE"  || n.verdict === "MOSTLY_TRUE").length;
-  const checkingCount = Object.values(checkingState).filter(Boolean).length;
+  const falseCount = displayItems.filter((n) => n.verdict === "FALSE" || n.verdict === "MOSTLY_FALSE").length;
+  const trueCount  = displayItems.filter((n) => n.verdict === "TRUE" || n.verdict === "MOSTLY_TRUE").length;
+  const checkingCount = displayItems.filter((n) => n.checking).length;
 
   return (
     <div className="flex flex-col h-full">
@@ -284,7 +118,7 @@ export default function DashboardPage() {
               <span className="text-white text-xs font-bold uppercase tracking-widest">Live</span>
             </div>
             <span className="text-blue-200 text-xs">
-              Verifying trending news from {ALL_NEWS.length} sources
+              Verifying claims from {displayItems.length} submissions
             </span>
             {checkingCount > 0 && (
               <span className="flex items-center gap-1.5 bg-white/10 text-blue-100 text-xs px-2.5 py-0.5 rounded-full">
@@ -295,7 +129,7 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-blue-300 text-xs">
-              Updated {lastRefresh.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+              Updated {lastRefresh.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
             </span>
             <button
               onClick={handleRefresh}
@@ -310,7 +144,7 @@ export default function DashboardPage() {
         {/* Summary Bar */}
         <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-5 py-3 flex items-center gap-6 overflow-x-auto">
           {[
-            { label: "Trending Stories", value: ALL_NEWS.length, color: "text-slate-700 dark:text-slate-200" },
+            { label: "Total Claims", value: displayItems.length, color: "text-slate-700 dark:text-slate-200" },
             { label: "Verified True", value: trueCount, color: "text-emerald-600 dark:text-emerald-400" },
             { label: "Misinformation", value: falseCount, color: "text-red-600 dark:text-red-400" },
             { label: "Being Checked", value: checkingCount, color: "text-blue-600 dark:text-blue-400" },
@@ -342,15 +176,15 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* Breaking News Banner */}
-          {displayed.filter((n) => n.breaking && !checkingState[n.id]).length > 0 && (
+          {/* Breaking / High Risk Alerts */}
+          {filtered.filter((n) => n.breaking && !n.checking).length > 0 && (
             <div className="flex items-start gap-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3">
               <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <span className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wide">⚡ Breaking</span>
+                <span className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wide">⚡ High Risk</span>
                 <div className="flex gap-4 mt-1 overflow-x-auto">
-                  {displayed
-                    .filter((n) => n.breaking && !checkingState[n.id])
+                  {filtered
+                    .filter((n) => n.breaking && !n.checking)
                     .map((n) => {
                       const vc = getVerdict(n.verdict);
                       return (
@@ -370,10 +204,23 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* News Grid */}
+          {/* Claims Grid — dynamically populated from backend */}
           <div className="grid grid-cols-1 gap-3">
-            {displayed.map((item) => {
-              const isChecking = checkingState[item.id];
+            {isLoading && filtered.length === 0 && (
+              <div className="text-center py-12 text-slate-400">
+                <RefreshCw size={20} className="animate-spin mx-auto mb-3" />
+                <p className="text-sm">Loading live data from SeeThru backend...</p>
+              </div>
+            )}
+            {!isLoading && filtered.length === 0 && (
+              <div className="text-center py-12 text-slate-400">
+                <Shield size={24} className="mx-auto mb-3 opacity-50" />
+                <p className="text-sm font-medium">No claims to display</p>
+                <p className="text-xs mt-1">Submit a claim for fact-checking to see it appear here dynamically.</p>
+              </div>
+            )}
+            {filtered.map((item) => {
+              const isChecking = item.checking;
               const vc = !isChecking ? getVerdict(item.verdict) : null;
               const sb = SOURCE_BADGE[item.sourceType];
 
@@ -394,10 +241,10 @@ export default function DashboardPage() {
           <div className="text-center py-4 space-y-1">
             <div className="flex items-center justify-center gap-2 text-slate-400">
               <Radio size={12} />
-              <p className="text-xs">SeeThru monitors 200+ news sources and social media in real time</p>
+              <p className="text-xs">SeeThru dynamically verifies content using AI agents in real time</p>
             </div>
             <p className="text-[11px] text-slate-300 dark:text-slate-600">
-              AI verdicts are for informational purposes only. Always verify with primary sources.
+              Data refreshes automatically every 30s. AI verdicts are for informational purposes only.
             </p>
           </div>
         </div>

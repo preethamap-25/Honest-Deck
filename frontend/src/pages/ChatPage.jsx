@@ -33,14 +33,14 @@ export default function ChatPage() {
     setShowScrollBtn(el.scrollHeight - el.scrollTop - el.clientHeight > 200);
   };
 
-  const handleSubmit = async (text) => {
+  const handleSubmit = async (text, options = {}) => {
     let checkId = activeCheckId;
     if (!checkId) {
       checkId = createCheck();
       setActiveCheckId(checkId);
       await new Promise((r) => setTimeout(r, 50));
     }
-    submitClaim(text);
+    submitClaim(text, options);
   };
 
   const isEmpty = !messages || messages.length === 0;
