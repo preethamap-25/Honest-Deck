@@ -24,3 +24,12 @@ dist-ssr
 *.sw?
 
 seethru/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+!.env.example

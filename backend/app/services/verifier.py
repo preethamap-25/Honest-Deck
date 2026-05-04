@@ -106,7 +106,7 @@ def check_prior_verdicts(claim_text: str) -> str:
         from app.core.database import get_db
         db = get_db()
         if db is None:
-            return "Database not available."
+            return "No prior verdicts found. Database not connected — skip this step and proceed with other tools like web_search and analyze_text_patterns."
 
         async def _query():
             results = []
@@ -136,7 +136,7 @@ def check_prior_verdicts(claim_text: str) -> str:
         return ("Prior verdicts:\n" + "\n".join(results)) if results else "No prior verdicts found."
     except Exception as e:
         logger.warning(f"check_prior_verdicts error: {e}")
-        return f"Could not query database: {e}"
+        return "No prior verdicts found. Database error — skip this step and use web_search instead."
 
 
 @tool
@@ -376,6 +376,32 @@ def produce_verdict(verdict_json: str) -> str:
                 clean = clean[4:]
         clean = clean.strip()
 
+        # Extract just the JSON object — LLMs often append commentary after the closing brace
+        brace_start = clean.find("{")
+        if brace_start != -1:
+            depth = 0
+            in_string = False
+            escape_next = False
+            for i, ch in enumerate(clean[brace_start:], start=brace_start):
+                if escape_next:
+                    escape_next = False
+                    continue
+                if ch == "\\":
+                    escape_next = True
+                    continue
+                if ch == '"' and not escape_next:
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        clean = clean[brace_start:i + 1]
+                        break
+
         data = json.loads(clean)
 
         valid_labels = {"true", "false", "misleading", "partially_true", "unverifiable"}
@@ -420,49 +446,29 @@ def produce_verdict(verdict_json: str) -> str:
 
 # ── Agent prompt ──────────────────────────────────────────────────────────────
 
-AGENT_PROMPT = PromptTemplate.from_template("""You are the SeeThru Central Agent — an expert misinformation detection system.
-You dynamically analyze content using the appropriate verification tools based on input type.
+AGENT_PROMPT = PromptTemplate.from_template("""You are a fact-checking agent. Verify the claim using available tools.
 
-Available tools:
-{tools}
+Tools: {tools}
 
-DYNAMIC ANALYSIS PROCESS:
-1. First, IDENTIFY the input type:
-   - If the input contains a URL → use analyze_url_safety to check for phishing/malware
-   - If the input is a text claim → use analyze_text_patterns for linguistic analysis
-   - Always use check_prior_verdicts to check for duplicates
-2. INVESTIGATE with evidence:
-   - Use web_search for 2-3 targeted evidence queries
-   - Use fetch_article to read source URLs in detail
-3. SYNTHESIZE findings:
-   - Cross-reference multiple verification signals
-   - Aggregate confidence from all tools used
-4. PRODUCE final verdict using produce_verdict (call ONCE)
-
-RULES:
-- Dynamically select tools based on input content (don't follow a fixed pipeline)
-- For URLs: ALWAYS run analyze_url_safety before concluding
-- For text claims: ALWAYS run analyze_text_patterns + web_search
-- Cross-reference 2+ sources for high confidence (>0.8)
-- Conflicting sources = lower confidence score
-- Never fabricate quotes or sources
-- produce_verdict must be called exactly once
-- Include risk_level in verdict: "safe", "suspicious", "dangerous"
+Process:
+1. Use analyze_text_patterns on the claim text
+2. Use web_search for 1-2 evidence queries
+3. If a URL is present, use analyze_url_safety
+4. Call produce_verdict ONCE with your final JSON verdict
+IMPORTANT: Do NOT call the same tool twice with the same input. If a tool returns an error or "not available", skip it and move to the next step.
 
 Input: {claim}
 {context_block}
 
 Format:
-Thought: what should I do next and why
+Thought: reasoning
 Action: tool name (one of [{tool_names}])
-Action Input: input to the tool
+Action Input: input
 Observation: result
-... repeat as needed ...
-Thought: I have sufficient evidence from multiple verification tools
+... (repeat) ...
+Thought: I have enough evidence
 Action: produce_verdict
-Action Input: {{"label": "...", "confidence": 0.0, "explanation": "...", "reasoning_steps": [], "evidence": [], "key_entities": [], "suggested_sources": [], "risk_level": "safe|suspicious|dangerous", "input_type": "text|url|mixed"}}
-Observation: Verdict recorded
-Final Answer: Investigation complete.
+Action Input: {{"label": "true|false|misleading|partially_true|unverifiable", "confidence": 0.0-1.0, "explanation": "...", "reasoning_steps": ["step1"], "evidence": [{{"source": "...", "excerpt": "...", "relevance_score": 0.8, "supports_claim": false}}], "key_entities": [], "suggested_sources": [], "risk_level": "safe|suspicious|dangerous", "input_type": "text"}}
 
 {agent_scratchpad}""")
 
@@ -485,6 +491,24 @@ def _detect_input_type(text: str) -> str:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
+_SYNTHESIS_PROMPT = """You are a fact-checking expert. Based on the evidence gathered below, produce a JSON verdict for the claim.
+
+Claim: {claim}
+Input type: {input_type}
+
+=== EVIDENCE GATHERED ===
+{evidence_text}
+=== END EVIDENCE ===
+
+You MUST respond with ONLY a valid JSON object (no commentary before or after). Use this exact structure:
+{{"label": "true|false|misleading|partially_true|unverifiable", "confidence": 0.0, "explanation": "...", "reasoning_steps": ["step1", "step2"], "evidence": [{{"source": "...", "excerpt": "...", "relevance_score": 0.8, "supports_claim": false}}], "key_entities": ["entity1"], "suggested_sources": ["source1"], "risk_level": "safe|suspicious|dangerous", "input_type": "{input_type}"}}
+
+Rules:
+- confidence is 0.0-1.0
+- label must be exactly one of: true, false, misleading, partially_true, unverifiable
+- Respond with ONLY the JSON object, nothing else"""
+
+
 async def verify_claim(
     claim_text: str,
     context: Optional[str] = None,
@@ -493,104 +517,179 @@ async def verify_claim(
     input_type: Optional[str] = None,
     retries: int = 1,
 ) -> dict:
-    """Run the LangChain ReAct agent to dynamically fact-check content.
-    The agent autonomously selects verification tools based on input type."""
+    """Deterministic fact-check pipeline: gather evidence first, then synthesize with one LLM call."""
     global _verdict_store
 
     if not settings.GROQ_API_KEY:
         return _stub_verdict(claim_text, "GROQ_API_KEY not configured")
 
-    # Dynamic input type detection
     detected_type = input_type or _detect_input_type(claim_text)
 
-    context_parts = []
-    if context:
-        context_parts.append(f"Context: {context}")
-    if source_url:
-        context_parts.append(f"Source URL: {source_url}")
-    if language != "en":
-        context_parts.append(
-            f"Note: Claim is in '{language}'. Return JSON fields in English."
-        )
-    context_parts.append(f"Detected input type: {detected_type}")
-    context_block = "\n".join(context_parts)
+    # ── Step 1: Gather evidence deterministically (no LLM calls) ──
+    evidence_parts = []
 
-    # All 6 verification tools available — agent dynamically selects which to use
-    tools = [
-        web_search,
-        fetch_article,
-        check_prior_verdicts,
-        analyze_url_safety,
-        analyze_text_patterns,
-        produce_verdict,
-    ]
+    # Text pattern analysis (rule-based, free)
+    try:
+        text_analysis = analyze_text_patterns.invoke(claim_text)
+        evidence_parts.append(f"TEXT ANALYSIS:\n{text_analysis}")
+    except Exception as e:
+        logger.warning(f"Text analysis failed: {e}")
 
-    # Try primary model, then fallbacks on rate limit
+    # Web search (free, DuckDuckGo)
+    try:
+        search_query = claim_text[:100]
+        search_results = web_search.invoke(f"{search_query} fact check")
+        evidence_parts.append(f"WEB SEARCH:\n{search_results}")
+    except Exception as e:
+        logger.warning(f"Web search failed: {e}")
+
+    # URL safety check if applicable
+    if detected_type in ("url", "mixed") or source_url:
+        try:
+            url_to_check = source_url or re.findall(r'https?://[^\s<>"\']+', claim_text)[0]
+            url_analysis = analyze_url_safety.invoke(url_to_check)
+            evidence_parts.append(f"URL ANALYSIS:\n{url_analysis}")
+        except Exception as e:
+            logger.warning(f"URL analysis failed: {e}")
+
+    evidence_text = "\n\n".join(evidence_parts) if evidence_parts else "No evidence could be gathered."
+
+    # ── Step 2: Single LLM call to synthesize verdict ──
     fallback_models = _get_fallback_models()
     models_to_try = [settings.GROQ_MODEL] + [m for m in fallback_models if m != settings.GROQ_MODEL]
 
-    for model_name in models_to_try:
-        llm = ChatGroq(
-            api_key=settings.GROQ_API_KEY,
-            model=model_name,
-            temperature=settings.GROQ_TEMPERATURE,
-            max_tokens=settings.GROQ_MAX_TOKENS,
-            timeout=settings.GROQ_REQUEST_TIMEOUT,
-            max_retries=1,
-        )
-        agent = create_react_agent(llm=llm, tools=tools, prompt=AGENT_PROMPT)
-        executor = AgentExecutor(
-            agent=agent,
-            tools=tools,
-            verbose=True,
-            max_iterations=settings.AGENT_MAX_ITERATIONS,
-            handle_parsing_errors=True,
-            early_stopping_method="generate",
-        )
+    synthesis_prompt = _SYNTHESIS_PROMPT.format(
+        claim=claim_text,
+        input_type=detected_type,
+        evidence_text=evidence_text[:3000],  # cap to avoid token overflow
+    )
 
-        _verdict_store.clear()
+    for model_name in models_to_try:
         try:
-            loop = asyncio.get_event_loop()
-            await asyncio.wait_for(
-                loop.run_in_executor(
-                    None,
-                    lambda: executor.invoke({
-                        "claim": claim_text,
-                        "context_block": context_block,
-                    })
+            llm = ChatGroq(
+                api_key=settings.GROQ_API_KEY,
+                model=model_name,
+                temperature=settings.GROQ_TEMPERATURE,
+                max_tokens=settings.GROQ_MAX_TOKENS,
+                timeout=settings.GROQ_REQUEST_TIMEOUT,
+                max_retries=3,
+            )
+
+            response = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None, lambda: llm.invoke(synthesis_prompt)
                 ),
                 timeout=settings.AGENT_TIMEOUT,
             )
 
-            verdict = _verdict_store.get("latest")
+            raw_text = response.content if hasattr(response, "content") else str(response)
+
+            # Parse the JSON verdict
+            verdict = _parse_verdict_json(raw_text)
             if verdict:
                 verdict["model_used"] = model_name
-                logger.info(f"Agent verdict ({model_name}): {verdict['label']} (confidence={verdict['confidence']:.2f})")
+                verdict["verified_at"] = datetime.now(timezone.utc).isoformat()
+                logger.info(f"Verdict ({model_name}): {verdict['label']} (confidence={verdict['confidence']:.2f})")
                 return verdict
 
-            logger.warning(f"Agent did not call produce_verdict with model {model_name}")
+            logger.warning(f"Could not parse verdict from {model_name} response")
 
         except asyncio.TimeoutError:
-            logger.error(f"Agent timed out with model {model_name}")
-            verdict = _verdict_store.get("latest")
-            if verdict:
-                verdict["model_used"] = model_name
-                logger.info(f"Verdict recovered after timeout ({model_name}): {verdict['label']}")
-                return verdict
+            logger.error(f"LLM timed out with model {model_name}")
         except Exception as e:
             error_str = str(e)
-            logger.error(f"Agent error with model {model_name}: {error_str}")
-            verdict = _verdict_store.get("latest")
-            if verdict:
-                verdict["model_used"] = model_name
-                return verdict
+            logger.error(f"LLM error with model {model_name}: {error_str}")
             if "429" in error_str or "rate_limit" in error_str.lower():
                 logger.info(f"Rate limited on {model_name}, trying next model...")
                 await asyncio.sleep(2)
-                continue
-            break
+            elif "decommissioned" in error_str.lower():
+                logger.info(f"Model {model_name} decommissioned, trying next...")
+            continue
 
-    return _stub_verdict(claim_text, "Agent failed to produce a verdict after retries")
+    return _stub_verdict(claim_text, "All models failed to produce a verdict")
+
+
+def _parse_verdict_json(raw_text: str) -> Optional[dict]:
+    """Extract and parse JSON verdict from LLM response."""
+    clean = raw_text.strip()
+
+    # Strip markdown code fences
+    if clean.startswith("```"):
+        clean = clean.split("```")[1]
+        if clean.startswith("json"):
+            clean = clean[4:]
+    if clean.endswith("```"):
+        clean = clean[:-3]
+    clean = clean.strip()
+
+    # Extract just the JSON object
+    brace_start = clean.find("{")
+    if brace_start == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escape_next = False
+    end_pos = -1
+    for i, ch in enumerate(clean[brace_start:], start=brace_start):
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\":
+            escape_next = True
+            continue
+        if ch == '"' and not escape_next:
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                end_pos = i
+                break
+
+    if end_pos == -1:
+        return None
+
+    try:
+        data = json.loads(clean[brace_start:end_pos + 1])
+    except json.JSONDecodeError:
+        return None
+
+    valid_labels = {"true", "false", "misleading", "partially_true", "unverifiable"}
+    label = data.get("label", "unverifiable").lower().strip()
+    if label not in valid_labels:
+        label = "unverifiable"
+
+    confidence = max(0.0, min(1.0, float(data.get("confidence", 0.5))))
+
+    evidence = []
+    for item in data.get("evidence", []):
+        try:
+            evidence.append({
+                "source": str(item.get("source", "unknown")),
+                "excerpt": str(item.get("excerpt", ""))[:500],
+                "relevance_score": float(item.get("relevance_score", 0.5)),
+                "supports_claim": bool(item.get("supports_claim", False)),
+            })
+        except Exception:
+            continue
+
+    return {
+        "label": label,
+        "confidence": confidence,
+        "explanation": str(data.get("explanation", "No explanation.")),
+        "reasoning_steps": data.get("reasoning_steps", []),
+        "evidence": evidence,
+        "key_entities": data.get("key_entities", []),
+        "suggested_sources": data.get("suggested_sources", []),
+        "risk_level": data.get("risk_level", "suspicious"),
+        "input_type": data.get("input_type", detected_type if 'detected_type' in dir() else "text"),
+        "requires_human_review": confidence < settings.HUMAN_REVIEW_CONFIDENCE_THRESHOLD,
+    }
 
 
 def _stub_verdict(claim_text: str, reason: str = "") -> dict:
